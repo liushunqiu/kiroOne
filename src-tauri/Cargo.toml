@@ -1,0 +1,43 @@
+[package]
+name = "ai-unified-manager"
+version = "0.1.0"
+description = "Kiro 账号管理与 API 网关统一工具"
+authors = ["your-name"]
+edition = "2021"
+
+[lib]
+name = "ai_unified_manager_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-store = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP 服务器
+axum = "0.7"
+tokio = { version = "1", features = ["full", "sync"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tokio-stream = "0.1"
+
+# HTTP 客户端
+reqwest = { version = "0.12", features = ["json", "stream", "socks"] }
+
+# 数据库
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# 工具
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+anyhow = "1"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = "0.3"
+home = "0.5"

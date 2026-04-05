@@ -1,0 +1,19 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png"
+    ]
+  },
+  "productName": "AI Unified Manager",
+  "mainBinaryName": "ai-unified-manager",
+  "version": "0.1.0",
+  "identifier": "com.ai-unified-manager"
+}
