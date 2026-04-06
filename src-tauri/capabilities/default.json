@@ -2,7 +2,7 @@
   "identifier": "default",
   "permissions": [
     "core:default",
-    "store:default",
-    "dialog:default"
+    "dialog:default",
+    "fs:default"
   ]
 }

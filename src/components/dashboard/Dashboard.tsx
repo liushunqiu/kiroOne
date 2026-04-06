@@ -1,113 +1,178 @@
-import { Card } from "../ui/Card";
-import { Server, Users, Activity } from "lucide-react";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
+import { Users, Server, Zap, TrendingUp } from "lucide-react";
 
-interface Account {
-  id: string;
-  name: string;
-  email: string;
-  is_active: boolean;
+interface DashboardStats {
+  totalAccounts: number;
+  activeAccounts: number;
+  totalProviders: number;
+  activeProvider?: string;
+  gatewayRunning: boolean;
+  gatewayPort?: number;
 }
 
 export function Dashboard() {
-  const [activeAccounts, setActiveAccounts] = useState<number>(0);
-  const [gatewayRunning, setGatewayRunning] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalAccounts: 0,
+    activeAccounts: 0,
+    totalProviders: 0,
+    gatewayRunning: false,
+  });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        // 获取账号列表
-        const accounts: Account[] = await invoke("get_accounts");
-        const activeCount = accounts.filter(acc => acc.is_active).length;
-        setActiveAccounts(activeCount);
-
-        // 获取网关状态
-        const status = await invoke("get_gateway_status");
-        setGatewayRunning(status.running);
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchData();
+    loadStats();
   }, []);
+
+  const loadStats = async () => {
+    try {
+      setLoading(true);
+      const accounts = await invoke<any[]>("get_accounts");
+      const providersData = await invoke<any>("get_providers");
+      const gatewayConfig = await invoke<any>("get_gateway_config");
+
+      setStats({
+        totalAccounts: accounts.length,
+        activeAccounts: accounts.filter((a: any) => a.status === "active").length,
+        totalProviders: providersData.providers.length,
+        activeProvider: providersData.active_provider?.name,
+        gatewayRunning: gatewayConfig.isRunning,
+        gatewayPort: gatewayConfig.port,
+      });
+    } catch (error) {
+      console.error("Failed to load stats:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-12">加载中...</div>;
+  }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-        仪表盘
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">仪表盘</h1>
+        <button
+          onClick={loadStats}
+          className="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200"
+        >
+          刷新
+        </button>
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <Server className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                API 网关状态
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {loading ? "加载中..." : gatewayRunning ? "运行中" : "已停止"}
-              </p>
-            </div>
-          </div>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">总账号数</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalAccounts}</div>
+            <p className="text-xs text-muted-foreground">
+              {stats.activeAccounts} 个活跃
+            </p>
+          </CardContent>
         </Card>
 
         <Card>
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <Users className="w-6 h-6 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                活跃账号
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {loading ? "-" : activeAccounts}
-              </p>
-            </div>
-          </div>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">供应商数</CardTitle>
+            <Zap className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalProviders}</div>
+            <p className="text-xs text-muted-foreground">
+              {stats.activeProvider ? `当前: ${stats.activeProvider}` : "未设置"}
+            </p>
+          </CardContent>
         </Card>
 
         <Card>
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-              <Activity className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">网关服务</CardTitle>
+            <Server className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {stats.gatewayRunning ? "运行中" : "已停止"}
             </div>
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                今日请求
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                0
-              </p>
+            <p className="text-xs text-muted-foreground">
+              {stats.gatewayPort ? `端口 ${stats.gatewayPort}` : "未配置"}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">额度使用</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">--</div>
+            <p className="text-xs text-muted-foreground">
+              同步账号后显示
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>快速操作</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <button className="w-full px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600">
+              添加账号
+            </button>
+            <button className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+              添加供应商
+            </button>
+            <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+              启动网关
+            </button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>最近活动</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center text-gray-500 py-8">
+              暂无活动记录
             </div>
-          </div>
+          </CardContent>
         </Card>
       </div>
 
       <Card>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-          快速开始
-        </h2>
-        <div className="space-y-3 text-gray-700 dark:text-gray-300">
-          <p>1. 在「账号管理」中导入你的 Kiro 账号</p>
-          <p>2. 在「API 网关」中查看 API 地址</p>
-          <p>
-            3. 在 Claude Code 中配置:
-            <code className="block bg-gray-100 dark:bg-gray-800 px-3 py-2 rounded mt-2 text-sm">
-              export ANTHROPIC_BASE_URL=http://127.0.0.1:8000
-              <br />
-              export ANTHROPIC_API_KEY=sk-local-kiro-gateway
-            </code>
-          </p>
-        </div>
+        <CardHeader>
+          <CardTitle>系统信息</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-gray-600">版本:</span>
+              <span className="ml-2 font-medium">0.1.0</span>
+            </div>
+            <div>
+              <span className="text-gray-600">数据库:</span>
+              <span className="ml-2 font-medium">SQLite</span>
+            </div>
+            <div>
+              <span className="text-gray-600">框架:</span>
+              <span className="ml-2 font-medium">Tauri 2.0</span>
+            </div>
+            <div>
+              <span className="text-gray-600">前端:</span>
+              <span className="ml-2 font-medium">React + TypeScript</span>
+            </div>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );

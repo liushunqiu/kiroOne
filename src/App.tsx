@@ -4,6 +4,7 @@ import { Dashboard } from "./components/dashboard/Dashboard";
 import { Accounts } from "./components/accounts/Accounts";
 import { Gateway } from "./components/gateway/Gateway";
 import { Settings } from "./components/settings/Settings";
+import { TestInvoke } from "./test-invoke";
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/gateway" element={<Gateway />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/test" element={<TestInvoke />} />
         </Routes>
       </main>
     </div>

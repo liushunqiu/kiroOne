@@ -9,8 +9,23 @@
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/32x32.png"
+      "icons/32x32.png",
+      "icons/icon.ico"
     ]
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Kiro One - AI 统一管理平台",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
   },
   "productName": "AI Unified Manager",
   "mainBinaryName": "ai-unified-manager",
