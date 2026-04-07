@@ -32,6 +32,8 @@ export function Accounts() {
   const [importTab, setImportTab] = useState<"json" | "kiro" | "kiro-cli">("json");
   const [jsonText, setJsonText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [editForm, setEditForm] = useState({ label: "", email: "", status: "active" });
 
   // 加载账号列表
   const loadAccounts = async () => {
@@ -161,6 +163,38 @@ export function Accounts() {
     } catch (error) {
       console.error("Failed to batch delete:", error);
       alert("批量删除失败");
+    }
+  };
+
+  // 打开编辑模态框
+  const handleEditAccount = (account: Account) => {
+    setEditingAccount(account);
+    setEditForm({
+      label: account.label,
+      email: account.email || "",
+      status: account.status,
+    });
+  };
+
+  // 保存编辑
+  const handleSaveEdit = async () => {
+    if (!editingAccount) return;
+    if (!editForm.label.trim()) {
+      alert("标签不能为空");
+      return;
+    }
+
+    try {
+      await invoke("update_account", {
+        id: editingAccount.id,
+        label: editForm.label,
+        status: editForm.status,
+      });
+      setEditingAccount(null);
+      await loadAccounts();
+    } catch (error) {
+      console.error("Failed to update account:", error);
+      alert("更新失败: " + error);
     }
   };
 
@@ -358,6 +392,7 @@ export function Accounts() {
                               />
                             </button>
                             <button
+                              onClick={() => handleEditAccount(account)}
                               className="p-1 text-green-500 hover:bg-green-50 rounded"
                               title="编辑"
                             >
@@ -381,6 +416,68 @@ export function Accounts() {
           )}
         </CardContent>
       </Card>
+
+      {/* 编辑账号模态框 */}
+      {editingAccount && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold">编辑账号</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">标签</label>
+                <input
+                  type="text"
+                  value={editForm.label}
+                  onChange={(e) => setEditForm({ ...editForm, label: e.target.value })}
+                  className="w-full px-3 py-2 border rounded"
+                  placeholder="账号标签"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">邮箱</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className="w-full px-3 py-2 border rounded"
+                  placeholder="邮箱地址"
+                  disabled
+                />
+                <p className="text-xs text-gray-500 mt-1">邮箱不可修改</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">状态</label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                  className="w-full px-3 py-2 border rounded"
+                >
+                  <option value="active">活跃</option>
+                  <option value="capped">额度用尽</option>
+                  <option value="banned">已封禁</option>
+                  <option value="invalid">无效</option>
+                </select>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 flex gap-2 justify-end">
+              <button
+                onClick={() => setEditingAccount(null)}
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 导入弹窗 */}
       {showImportModal && (

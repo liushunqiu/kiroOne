@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Users, Server, Zap, TrendingUp } from "lucide-react";
 
@@ -13,6 +14,7 @@ interface DashboardStats {
 }
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>({
     totalAccounts: 0,
     activeAccounts: 0,
@@ -125,13 +127,22 @@ export function Dashboard() {
             <CardTitle>快速操作</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <button className="w-full px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600">
+            <button
+              onClick={() => navigate("/accounts")}
+              className="w-full px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600"
+            >
               添加账号
             </button>
-            <button className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+            <button
+              onClick={() => navigate("/settings")}
+              className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            >
               添加供应商
             </button>
-            <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+            <button
+              onClick={() => navigate("/gateway")}
+              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
               启动网关
             </button>
           </CardContent>
@@ -161,7 +172,7 @@ export function Dashboard() {
             </div>
             <div>
               <span className="text-gray-600">数据库:</span>
-              <span className="ml-2 font-medium">SQLite</span>
+              <span className="ml-2 font-medium">JSON 文件</span>
             </div>
             <div>
               <span className="text-gray-600">框架:</span>

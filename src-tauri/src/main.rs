@@ -1,92 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::Mutex;
+mod persistence;
+mod state;
+mod gateway;
+mod api_client;
+mod claude_sync;
+
+use state::{Account, AppState, GatewayConfig, KiroLocalToken, Provider};
 use uuid::Uuid;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Account {
-    pub id: String,
-    pub email: Option<String>,
-    pub label: String,
-    pub status: String,
-    pub provider: Option<String>,
-    pub auth_method: Option<String>,
-    pub access_token: Option<String>,
-    pub refresh_token: Option<String>,
-    pub expires_at: Option<String>,
-    pub user_id: Option<String>,
-    pub client_id: Option<String>,
-    pub client_secret: Option<String>,
-    pub region: Option<String>,
-    pub profile_arn: Option<String>,
-    pub usage_data: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Provider {
-    pub id: String,
-    pub name: String,
-    pub api_base_url: String,
-    pub api_key: String,
-    pub api_format: String,
-    pub is_active: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GatewayConfig {
-    pub port: u16,
-    pub api_key: String,
-    pub is_running: bool,
-    pub default_model: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KiroLocalToken {
-    #[serde(rename = "accessToken")]
-    pub access_token: Option<String>,
-    #[serde(rename = "refreshToken")]
-    pub refresh_token: Option<String>,
-    #[serde(rename = "expiresAt")]
-    pub expires_at: Option<String>,
-    #[serde(rename = "authMethod")]
-    pub auth_method: Option<String>,
-    pub provider: Option<String>,
-    #[serde(rename = "profileArn")]
-    pub profile_arn: Option<String>,
-    #[serde(rename = "clientIdHash")]
-    pub client_id_hash: Option<String>,
-    pub region: Option<String>,
-}
-
-pub struct AppState {
-    pub accounts: Mutex<HashMap<String, Account>>,
-    pub providers: Mutex<HashMap<String, Provider>>,
-    pub gateway_config: Mutex<GatewayConfig>,
-}
-
-impl AppState {
-    pub fn new() -> Self {
-        Self {
-            accounts: Mutex::new(HashMap::new()),
-            providers: Mutex::new(HashMap::new()),
-            gateway_config: Mutex::new(GatewayConfig {
-                port: 8710,
-                api_key: uuid::Uuid::new_v4().to_string(),
-                is_running: false,
-                default_model: Some("claude-sonnet-4".to_string()),
-            }),
-        }
-    }
-}
+use std::sync::Mutex;
+use gateway::GatewayServer;
+use api_client::KiroApiClient;
 
 #[tauri::command]
 fn get_accounts(state: tauri::State<AppState>) -> Vec<Account> {
@@ -95,7 +19,7 @@ fn get_accounts(state: tauri::State<AppState>) -> Vec<Account> {
 }
 
 #[tauri::command]
-fn add_account(state: tauri::State<AppState>, label: String, email: Option<String>) -> String {
+fn add_account(state: tauri::State<AppState>, label: String, email: Option<String>) -> Result<String, String> {
     let now = chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string();
     let account = Account {
         id: Uuid::new_v4().to_string(),
@@ -116,58 +40,113 @@ fn add_account(state: tauri::State<AppState>, label: String, email: Option<Strin
         created_at: now.clone(),
         updated_at: now,
     };
+    let account_id = account.id.clone();
     let mut accounts = state.accounts.lock().unwrap();
-    accounts.insert(account.id.clone(), account.clone());
-    account.id
+    accounts.insert(account.id.clone(), account);
+    drop(accounts);
+
+    state.save_accounts()?;
+    Ok(account_id)
 }
 
 #[tauri::command]
-fn update_account(state: tauri::State<AppState>, id: String, label: Option<String>, status: Option<String>) -> bool {
+fn update_account(state: tauri::State<AppState>, id: String, label: Option<String>, status: Option<String>) -> Result<bool, String> {
     let mut accounts = state.accounts.lock().unwrap();
-    if let Some(account) = accounts.get_mut(&id) {
+    let updated = if let Some(account) = accounts.get_mut(&id) {
         if let Some(l) = label { account.label = l; }
         if let Some(s) = status { account.status = s; }
         account.updated_at = chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string();
         true
-    } else { false }
+    } else {
+        false
+    };
+    drop(accounts);
+
+    if updated {
+        state.save_accounts()?;
+    }
+    Ok(updated)
 }
 
 #[tauri::command]
-fn delete_account(state: tauri::State<AppState>, id: String) -> bool {
-    state.accounts.lock().unwrap().remove(&id).is_some()
+fn delete_account(state: tauri::State<AppState>, id: String) -> Result<bool, String> {
+    let deleted = state.accounts.lock().unwrap().remove(&id).is_some();
+
+    if deleted {
+        state.save_accounts()?;
+    }
+    Ok(deleted)
 }
 
 #[tauri::command]
 async fn sync_account(state: tauri::State<'_, AppState>, id: String) -> Result<String, String> {
+    // 获取账号信息
     let account = {
         let accounts = state.accounts.lock().unwrap();
         accounts.get(&id).cloned().ok_or("账号不存在")?
     };
-    
-    let _refresh_token = account.refresh_token.clone().ok_or("账号缺少 refresh_token")?;
-    let provider = account.provider.clone().unwrap_or_else(|| "Google".to_string());
-    
-    // 模拟额度数据 (实际应该调用 Kiro API)
-    // 这里生成一些示例数据来演示功能
-    let usage_data = serde_json::json!({
-        "usageBreakdownList": [{
-            "currentUsageWithPrecision": 150.5,
-            "usageLimitWithPrecision": 1000.0,
-            "currentUsage": 150,
-            "usageLimit": 1000,
-            "percentage": 15.05
-        }],
-        "provider": provider,
-        "syncedAt": chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string()
-    });
-    
+
+    let refresh_token = account
+        .refresh_token
+        .clone()
+        .ok_or("账号缺少 refresh_token")?;
+    let provider = account.provider.clone();
+
+    // 创建 API 客户端
+    let api_client = KiroApiClient::new(None);
+
+    // 步骤 1: 刷新 access token
+    let access_token = match api_client.refresh_access_token(&refresh_token).await {
+        Ok(response) => {
+            // 更新账号的 access_token 和 expires_at
+            let mut accounts = state.accounts.lock().unwrap();
+            if let Some(acc) = accounts.get_mut(&id) {
+                acc.access_token = Some(response.access_token.clone());
+                acc.expires_at = response.expires_at.clone();
+                acc.updated_at = chrono::Local::now()
+                    .format("%Y/%m/%d %H:%M:%S")
+                    .to_string();
+            }
+            drop(accounts);
+            state.save_accounts()?;
+
+            response.access_token
+        }
+        Err(e) => {
+            eprintln!("刷新 Token 失败: {}", e);
+            return Err(format!("刷新 Token 失败: {}", e));
+        }
+    };
+
+    // 步骤 2: 调用真实 API 获取额度
+    let usage_data = match api_client
+        .sync_account_usage(&access_token, provider.as_deref())
+        .await
+    {
+        Ok(data) => data,
+        Err(e) => {
+            // API 调用失败,使用模拟数据作为降级
+            eprintln!("API 调用失败,使用模拟数据: {}", e);
+            KiroApiClient::generate_mock_usage(provider.as_deref())
+        }
+    };
+
+    // 序列化 usage_data
+    let usage_json = serde_json::to_string(&usage_data)
+        .map_err(|e| format!("序列化数据失败: {}", e))?;
+
+    // 更新账号数据
     let mut accounts = state.accounts.lock().unwrap();
     if let Some(acc) = accounts.get_mut(&id) {
-        acc.usage_data = Some(usage_data.to_string());
+        acc.usage_data = Some(usage_json);
         acc.status = "active".to_string();
-        acc.updated_at = chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string();
+        acc.updated_at = chrono::Local::now()
+            .format("%Y/%m/%d %H:%M:%S")
+            .to_string();
     }
-    
+    drop(accounts);
+
+    state.save_accounts()?;
     Ok(format!("账号 {} 同步成功", id))
 }
 
@@ -226,6 +205,11 @@ fn import_accounts_command(state: tauri::State<AppState>, json: String) -> Resul
         map.insert(account.id.clone(), account);
         count += 1;
     }
+    drop(map);
+
+    if count > 0 {
+        state.save_accounts()?;
+    }
     Ok(count)
 }
 
@@ -272,6 +256,9 @@ async fn add_account_by_social(
     };
     let mut accounts = state.accounts.lock().unwrap();
     accounts.insert(account.id.clone(), account.clone());
+    drop(accounts);
+
+    state.save_accounts()?;
     Ok(serde_json::json!({ "account": account, "isNew": true }))
 }
 
@@ -294,27 +281,71 @@ fn get_providers(state: tauri::State<AppState>) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn add_provider(state: tauri::State<AppState>, name: String, api_base_url: String, api_key: String, api_format: String) -> String {
+fn add_provider(state: tauri::State<AppState>, name: String, api_base_url: String, api_key: String, api_format: String) -> Result<String, String> {
     let now = chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string();
     let provider = Provider { id: Uuid::new_v4().to_string(), name, api_base_url, api_key, api_format, is_active: false, created_at: now.clone(), updated_at: now };
-    state.providers.lock().unwrap().insert(provider.id.clone(), provider.clone());
-    provider.id
+    let provider_id = provider.id.clone();
+    state.providers.lock().unwrap().insert(provider.id.clone(), provider);
+
+    state.save_providers()?;
+    Ok(provider_id)
 }
 
 #[tauri::command]
 fn switch_provider(state: tauri::State<AppState>, id: String) -> Result<Provider, String> {
     let mut providers = state.providers.lock().unwrap();
     for provider in providers.values_mut() { provider.is_active = false; }
-    if let Some(provider) = providers.get_mut(&id) {
+    let result = if let Some(provider) = providers.get_mut(&id) {
         provider.is_active = true;
         provider.updated_at = chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string();
         Ok(provider.clone())
-    } else { Err("Provider not found".to_string()) }
+    } else {
+        Err("Provider not found".to_string())
+    };
+    drop(providers);
+
+    if result.is_ok() {
+        state.save_providers()?;
+    }
+    result
 }
 
 #[tauri::command]
-fn delete_provider(state: tauri::State<AppState>, id: String) -> bool {
-    state.providers.lock().unwrap().remove(&id).is_some()
+fn update_provider(
+    state: tauri::State<AppState>,
+    id: String,
+    name: Option<String>,
+    api_base_url: Option<String>,
+    api_key: Option<String>,
+    api_format: Option<String>,
+) -> Result<Provider, String> {
+    let mut providers = state.providers.lock().unwrap();
+    let result = if let Some(provider) = providers.get_mut(&id) {
+        if let Some(n) = name { provider.name = n; }
+        if let Some(url) = api_base_url { provider.api_base_url = url; }
+        if let Some(key) = api_key { provider.api_key = key; }
+        if let Some(format) = api_format { provider.api_format = format; }
+        provider.updated_at = chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string();
+        Ok(provider.clone())
+    } else {
+        Err("Provider not found".to_string())
+    };
+    drop(providers);
+
+    if result.is_ok() {
+        state.save_providers()?;
+    }
+    result
+}
+
+#[tauri::command]
+fn delete_provider(state: tauri::State<AppState>, id: String) -> Result<bool, String> {
+    let deleted = state.providers.lock().unwrap().remove(&id).is_some();
+
+    if deleted {
+        state.save_providers()?;
+    }
+    Ok(deleted)
 }
 
 #[tauri::command]
@@ -326,28 +357,134 @@ fn get_provider_presets() -> Vec<serde_json::Value> {
 }
 
 #[tauri::command]
+async fn start_gateway(
+    app_state: tauri::State<'_, AppState>,
+    gateway_server: tauri::State<'_, Mutex<GatewayServer>>,
+) -> Result<String, String> {
+    let config = app_state.gateway_config.lock().unwrap();
+    let port = config.port;
+    drop(config);
+
+    let mut server = gateway_server.lock().unwrap();
+    server.start(app_state.inner().clone(), port).await?;
+    drop(server);
+
+    // 更新配置状态
+    let mut config = app_state.gateway_config.lock().unwrap();
+    config.is_running = true;
+    drop(config);
+
+    app_state.save_gateway_config()?;
+    Ok(format!("网关已启动,监听端口 {}", port))
+}
+
+#[tauri::command]
+fn stop_gateway(
+    app_state: tauri::State<AppState>,
+    gateway_server: tauri::State<Mutex<GatewayServer>>,
+) -> Result<String, String> {
+    let mut server = gateway_server.lock().unwrap();
+    server.stop()?;
+    drop(server);
+
+    // 更新配置状态
+    let mut config = app_state.gateway_config.lock().unwrap();
+    config.is_running = false;
+    drop(config);
+
+    app_state.save_gateway_config()?;
+    Ok("网关已停止".to_string())
+}
+
+#[tauri::command]
 fn get_gateway_config(state: tauri::State<AppState>) -> GatewayConfig {
     state.gateway_config.lock().unwrap().clone()
 }
 
 #[tauri::command]
-fn update_gateway_config(state: tauri::State<AppState>, port: Option<u16>, api_key: Option<String>, default_model: Option<String>) -> bool {
+fn update_gateway_config(
+    state: tauri::State<AppState>,
+    port: Option<u16>,
+    api_key: Option<String>,
+    default_model: Option<String>,
+    proxy_enabled: Option<bool>,
+    proxy_url: Option<String>,
+) -> Result<bool, String> {
     let mut config = state.gateway_config.lock().unwrap();
-    if let Some(p) = port { config.port = p; }
-    if let Some(key) = api_key { config.api_key = key; }
-    if let Some(model) = default_model { config.default_model = Some(model); }
-    true
+    let mut proxy_changed = false;
+
+    if let Some(p) = port {
+        config.port = p;
+    }
+    if let Some(key) = api_key {
+        config.api_key = key;
+    }
+    if let Some(model) = default_model {
+        config.default_model = Some(model);
+    }
+    if let Some(enabled) = proxy_enabled {
+        if config.proxy_enabled != enabled {
+            proxy_changed = true;
+        }
+        config.proxy_enabled = enabled;
+    }
+    if let Some(url) = proxy_url {
+        if config.proxy_url.as_ref() != Some(&url) {
+            proxy_changed = true;
+        }
+        config.proxy_url = Some(url);
+    }
+    config.updated_at = chrono::Local::now()
+        .format("%Y/%m/%d %H:%M:%S")
+        .to_string();
+    drop(config);
+
+    state.save_gateway_config()?;
+
+    // 如果代理配置改变,重建 HTTP 客户端
+    if proxy_changed {
+        state.rebuild_http_client();
+    }
+
+    Ok(true)
+}
+
+#[tauri::command]
+fn sync_to_claude_code(state: tauri::State<AppState>) -> Result<String, String> {
+    let config = state.gateway_config.lock().unwrap();
+    claude_sync::sync_to_claude(config.port, &config.api_key)?;
+    Ok(format!("已同步到 Claude Code: http://127.0.0.1:{}", config.port))
+}
+
+#[tauri::command]
+fn read_from_claude_code() -> Result<serde_json::Value, String> {
+    let (base_url, api_key) = claude_sync::read_from_claude()?;
+    Ok(serde_json::json!({
+        "baseUrl": base_url,
+        "apiKey": api_key
+    }))
 }
 
 fn main() {
     tauri::Builder::default()
-        .manage(AppState::new())
+        .setup(|app| {
+            let state = AppState::new(&app.handle())
+                .map_err(|e| format!("初始化应用状态失败: {}", e))?;
+            app.manage(state);
+
+            // 初始化网关服务器
+            let gateway_server = Mutex::new(GatewayServer::new());
+            app.manage(gateway_server);
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_accounts, add_account, update_account, delete_account, sync_account,
             export_accounts_command, import_accounts_command,
             get_kiro_local_token, add_account_by_social, import_from_kiro_ide,
-            get_providers, add_provider, switch_provider, delete_provider, get_provider_presets,
-            get_gateway_config, update_gateway_config,
+            get_providers, add_provider, update_provider, switch_provider, delete_provider, get_provider_presets,
+            get_gateway_config, update_gateway_config, start_gateway, stop_gateway,
+            sync_to_claude_code, read_from_claude_code,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -31,6 +31,7 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
 
   const [newProvider, setNewProvider] = useState({
     name: "",
@@ -67,25 +68,7 @@ export function Settings() {
   };
 
   const handleAddProvider = async () => {
-    if (!newProvider.name || !newProvider.apiBaseUrl || !newProvider.apiKey) {
-      alert("请填写完整信息");
-      return;
-    }
-
-    try {
-      await invoke("add_provider", {
-        name: newProvider.name,
-        apiBaseUrl: newProvider.apiBaseUrl,
-        apiKey: newProvider.apiKey,
-        apiFormat: newProvider.apiFormat,
-      });
-      setShowAddForm(false);
-      setNewProvider({ name: "", apiBaseUrl: "", apiKey: "", apiFormat: "anthropic" });
-      await loadData();
-    } catch (error) {
-      console.error("Failed to add provider:", error);
-      alert("添加失败");
-    }
+    await handleSaveProvider();
   };
 
   const handleDeleteProvider = async (id: string) => {
@@ -126,6 +109,52 @@ export function Settings() {
       apiFormat: preset.apiFormat,
     });
     setShowAddForm(true);
+  };
+
+  const handleEditProvider = (provider: Provider) => {
+    setEditingProvider(provider);
+    setNewProvider({
+      name: provider.name,
+      apiBaseUrl: provider.apiBaseUrl,
+      apiKey: provider.apiKey,
+      apiFormat: provider.apiFormat,
+    });
+    setShowAddForm(true);
+  };
+
+  const handleSaveProvider = async () => {
+    if (!newProvider.name || !newProvider.apiBaseUrl || !newProvider.apiKey) {
+      alert("请填写完整信息");
+      return;
+    }
+
+    try {
+      if (editingProvider) {
+        // 更新现有供应商
+        await invoke("update_provider", {
+          id: editingProvider.id,
+          name: newProvider.name,
+          apiBaseUrl: newProvider.apiBaseUrl,
+          apiKey: newProvider.apiKey,
+          apiFormat: newProvider.apiFormat,
+        });
+      } else {
+        // 添加新供应商
+        await invoke("add_provider", {
+          name: newProvider.name,
+          apiBaseUrl: newProvider.apiBaseUrl,
+          apiKey: newProvider.apiKey,
+          apiFormat: newProvider.apiFormat,
+        });
+      }
+      setShowAddForm(false);
+      setEditingProvider(null);
+      setNewProvider({ name: "", apiBaseUrl: "", apiKey: "", apiFormat: "anthropic" });
+      await loadData();
+    } catch (error) {
+      console.error("Failed to save provider:", error);
+      alert("保存失败");
+    }
   };
 
   const getFormatLabel = (format: string) => {
@@ -188,7 +217,7 @@ export function Settings() {
       {showAddForm && (
         <Card>
           <CardHeader>
-            <CardTitle>添加供应商</CardTitle>
+            <CardTitle>{editingProvider ? "编辑供应商" : "添加供应商"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -238,10 +267,14 @@ export function Settings() {
                 onClick={handleAddProvider}
                 className="flex-1 px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600"
               >
-                添加
+                {editingProvider ? "保存" : "添加"}
               </button>
               <button
-                onClick={() => setShowAddForm(false)}
+                onClick={() => {
+                  setShowAddForm(false);
+                  setEditingProvider(null);
+                  setNewProvider({ name: "", apiBaseUrl: "", apiKey: "", apiFormat: "anthropic" });
+                }}
                 className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
               >
                 取消
@@ -309,6 +342,7 @@ export function Settings() {
                         />
                       </button>
                       <button
+                        onClick={() => handleEditProvider(provider)}
                         className="p-2 text-blue-600 hover:bg-blue-50 rounded"
                         title="编辑"
                       >

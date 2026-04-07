@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui
 import { Play, Square, Copy, Key } from "lucide-react";
 
 interface GatewayConfig {
-  id: string;
   port: number;
   apiKey: string;
   isRunning: boolean;
@@ -61,15 +60,16 @@ export function Gateway() {
 
     try {
       if (config.isRunning) {
-        // TODO: 实现停止服务器
-        alert("停止服务器功能待实现");
+        await invoke("stop_gateway");
+        alert("网关已停止");
       } else {
-        // TODO: 实现启动服务器
-        alert("启动服务器功能待实现");
+        await invoke("start_gateway");
+        alert("网关已启动");
       }
+      await loadConfig();
     } catch (error) {
       console.error("Failed to toggle server:", error);
-      alert("操作失败");
+      alert("操作失败: " + error);
     }
   };
 
@@ -82,10 +82,20 @@ export function Gateway() {
 
   const generateApiKey = () => {
     if (!config) return;
-    const newKey = "sk-" + Array.from({ length: 32 }, () => 
+    const newKey = "sk-" + Array.from({ length: 32 }, () =>
       Math.random().toString(36).charAt(2)
     ).join("");
     setConfig({ ...config, apiKey: newKey });
+  };
+
+  const handleSyncToClaude = async () => {
+    try {
+      const result = await invoke<string>("sync_to_claude_code");
+      alert(result);
+    } catch (error) {
+      console.error("同步失败:", error);
+      alert("同步到 Claude Code 失败: " + error);
+    }
   };
 
   if (loading) {
@@ -181,6 +191,13 @@ export function Gateway() {
               className="w-full px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-50"
             >
               {saving ? "保存中..." : "保存配置"}
+            </button>
+
+            <button
+              onClick={handleSyncToClaude}
+              className="w-full px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+            >
+              同步到 Claude Code
             </button>
           </CardContent>
         </Card>
